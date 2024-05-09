@@ -1,0 +1,135 @@
+fastapi
+uvicorn
+grpcio
+grpcio-tools
+from enum import Enum, IntEnum
+from typing import Any, Dict
+
+from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel, GetJsonSchemaHandler
+from pydantic._internal._schema_generation_shared import GenerateJsonSchemaHandler
+from pydantic.json_schema import JsonSchemaValue
+from pydantic_core import core_schema, SchemaSerializer
+from pydantic_core.core_schema import ValidationInfo, CoreSchema
+from starlette.middleware.cors import CORSMiddleware
+
+import grpc
+
+import calculator_pb2
+import calculator_pb2_grpc
+
+# app = FastAPI(
+#     title="gRPC-calculator",
+#     version="0.0.1",
+#     description="this is a simple calculator app with minimal usage grpc in backend",
+#     terms_of_service="https://example.com/terms/",
+#     root_path="/",
+#     docs_url="/swagger",
+#     openapi_url="/openapi",
+# )
+
+app = FastAPI(
+    title="ChimichangApp",
+    description="description",
+    summary="Deadpool's favorite app. Nuff said.",
+    version="0.0.1",
+    terms_of_service="http://example.com/terms/",
+    contact={
+        "name": "Deadpoolio the Amazing",
+        "url": "http://x-force.example.com/contact/",
+        "email": "dp@x-force.example.com",
+    },
+    license_info={
+        "name": "Apache 2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0.html",
+    },
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=[""],
+    allow_headers=["*"],
+)
+
+channel = grpc.aio.insecure_channel('calculator_grpc:50051')
+stub = calculator_pb2_grpc.CalculatorServiceStub(channel)
+
+
+# enum_values = {
+#     "add": 0,
+#     "subtract": 1,
+#     "multiply": 2,
+#     "divide": 3,
+# }
+#
+#
+# class OperationEnum(Enum):
+#     pass
+#
+#
+# OperationEnum = OperationEnum("TypeEnum", enum_values)
+#
+#
+# class OperationModel(BaseModel):
+#     operation: OperationEnum = OperationEnum.add
+
+
+class DocEnum(Enum):
+    def __new__(cls, value, doc=None):
+        self = object.__new__(cls)  # calling super().__new__(value) here would fail
+        self._value_ = value
+        if doc is not None:
+            self.__doc__ = doc
+        return self
+
+
+class OperationEnum(DocEnum):
+    # ADD = "add", 0
+    # SUBTRACT = "subtract", 1
+    # MULTIPLY = "multiply", 2
+    # DIVIDE = "divide", 3
+    ADD = 0
+    SUBTRACT = 1
+    MULTIPLY = 2
+    DIVIDE = 3
+
+    """
+    An enum classmethod to make pydantic json schema use member names instead of values.
+    """
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+            cls, schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        json_schema = handler(schema)
+        json_schema = handler.resolve_ref_schema(json_schema)
+        json_schema["enum"] = list(cls.__members__.keys())
+        json_schema["type"] = "str"
+        return json_schema
+
+    @classmethod
+    def __get_validators__(cls):
+        cls.lookup = {v: k.value for v, k in cls.__members__.items()}
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, key: str, _: ValidationInfo) -> int:
+        try:
+            return cls[key.upper()].value
+        except KeyError:
+            raise ValueError(f"Invalid key: {key}. Valid keys are {', '.join(cls.__members__.keys())}")
+
+
+@app.get("/calculate/")
+async def calculate(x: int, y: int, operation: OperationEnum = Query(..., description="Operation choices")):
+    try:
+        request = calculator_pb2.CalculationRequest(x=x, y=y, operation=operation)
+        response = await stub.PerformCalculation(request)
+        return {"result": response.result}
+    except grpc.aio.AioRpcError as rpc_error:
+        details = rpc_error.details()
+        status_code = rpc_error.code()
+        if status_code == grpc.StatusCode.INVALID_ARGUMENT:
+            raise HTTPException(status_code=400, detail=details)
+        raise HTTPException(status_code=500, detail="Internal Server Error")

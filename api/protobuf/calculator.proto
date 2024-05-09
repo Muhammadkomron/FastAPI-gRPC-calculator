@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package calculator;
+
+enum Operation {
+  ADD = 0;
+  SUBTRACT = 1;
+  MULTIPLY = 2;
+  DIVIDE = 3;
+}
+
+message CalculationRequest {
+  int32 x = 1;
+  int32 y = 2;
+  Operation operation = 3;
+}
+
+message CalculationResponse {
+  float result = 1;
+}
+
+service CalculatorService {
+  rpc PerformCalculation (CalculationRequest) returns (CalculationResponse);
+}

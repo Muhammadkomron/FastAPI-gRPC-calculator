@@ -1,0 +1,32 @@
+version: "3.8"
+
+volumes:
+  calculator_api_volumes: {}
+  calculator_grpc_volumes: {}
+
+services:
+
+  calculator_api:
+    build:
+      context: ./api
+      dockerfile: ./Dockerfile
+    container_name: calculator_api
+    volumes:
+      - calculator_api_volumes:/app:cached
+    restart: on-failure
+    ports:
+      - "8000:8000"
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  calculator_grpc:
+    build:
+      context: ./grpc
+      dockerfile: ./Dockerfile
+    container_name: calculator_grpc
+    volumes:
+      - calculator_grpc_volumes:/app:cached
+    restart: on-failure
+    expose:
+      - 50051
+      - 8000
+    command: ["python", "main.py"]
